@@ -33,9 +33,11 @@ from omniisaacgymenvs.robots.articulations.cartpole import Cartpole
 from omni.isaac.core.articulations import ArticulationView
 from omni.isaac.core.utils.prims import get_prim_at_path
 
+from itertools import product
 import numpy as np
 import torch
 import math
+import copy
 
 
 class CartpoleTask(RLTask):
@@ -62,6 +64,15 @@ class CartpoleTask(RLTask):
         self._num_observations = 4
         self._num_actions = 1
 
+        self._num_groups = self._task_cfg["env"]["numGroups"]
+        self._num_envs_in_groups = self._num_envs / self._num_groups
+        self._groupmarklist = self._task_cfg["env"]["groupMark"] # type -> list
+        self._num_partitions = len(self._groupmarklist)
+        self._state_div = self._task_cfg["env"]["stateDiv"]
+
+        if self._num_groups != self._groupmarklist[-1] or self._num_partitions != np.prod(self._state_div):
+            ValueError("The Optimization Combination setting is not correct!")
+
         RLTask.__init__(self, name, env)
         return
 
@@ -70,12 +81,24 @@ class CartpoleTask(RLTask):
         super().set_up_scene(scene)
         self._cartpoles = ArticulationView(prim_paths_expr="/World/envs/.*/Cartpole", name="cartpole_view", reset_xform_properties=False)
         scene.add(self._cartpoles)
+        self.init_data()
         return
 
     def get_cartpole(self):
         cartpole = Cartpole(prim_path=self.default_zero_env_path + "/Cartpole", name="Cartpole", translation=self._cartpole_positions)
         # applies articulation settings from the task configuration yaml file
         self._sim_config.apply_articulation_settings("Cartpole", get_prim_at_path(cartpole.prim_path), self._sim_config.parse_actor_config("Cartpole"))
+
+    def init_data(self):
+        # In later experiment, we will consider whether we should move this initial part onto GPU.
+        # But I doubt there will lead to significant progress.
+        self.marks = [0, self.num_envs]
+        for i in range(len(self._groupmarklist)):
+            self.marks.insert(i+1, int(self._groupmarklist[i]*self._num_envs_in_groups))
+            print(f"Group #{i+1} utilize robot {self.marks[i]+1}-{self.marks[i+1]}.")
+
+        self._space_combination_list = [list(range(i)) for i in self._state_div]
+        return 
 
     def get_observations(self) -> dict:
         dof_pos = self._cartpoles.get_joint_positions(clone=False)
@@ -116,11 +139,30 @@ class CartpoleTask(RLTask):
 
     def reset_idx(self, env_ids):
         num_resets = len(env_ids)
+        reset_group_mark = [0]* self._num_partitions
+        mark_index = 0
+        for env_id in env_ids:
+            while mark_index < self._num_partitions and env_id >= self.marks[mark_index + 1]:
+                mark_index += 1
+            if self.marks[mark_index] <= env_id < self.marks[mark_index+1]:
+                reset_group_mark[mark_index] += 1
 
         # randomize DOF positions
+        reset_mark = 0
         dof_pos = torch.zeros((num_resets, self._cartpoles.num_dof), device=self._device)
-        dof_pos[:, self._cart_dof_idx] = 1.0 * (1.0 - 2.0 * torch.rand(num_resets, device=self._device))
-        dof_pos[:, self._pole_dof_idx] = 0.125 * math.pi * (1.0 - 2.0 * torch.rand(num_resets, device=self._device))
+        for idx, value in enumerate(list(product(self._space_combination_list[0], self._space_combination_list[1]))):
+            dof_pos[reset_mark:reset_mark+reset_group_mark[idx], self._cart_dof_idx] = \
+                1.0 * (1.0 - 2.0 * torch.rand(reset_group_mark[idx], device=self._device)) / self._state_div[0] +\
+                2 * (-(self._state_div[0]//2) + value[0]) / self._state_div[0]
+            dof_pos[reset_mark:reset_mark+reset_group_mark[idx], self._pole_dof_idx] = \
+                0.125 * math.pi * ((1.0 - 2.0 * torch.rand(reset_group_mark[idx], device=self._device)) / self._state_div[1] +\
+                                   2 * (-(self._state_div[1]//2) + value[1]) / self._state_div[1])
+            reset_mark += reset_group_mark[idx]
+
+        # Default randomization initialization
+        # dof_pos[:, self._cart_dof_idx] = 1.0 * (1.0 - 2.0 * torch.rand(num_resets, device=self._device))
+        # dof_pos[:, self._pole_dof_idx] = 0.125 * math.pi * (1.0 - 2.0 * torch.rand(num_resets, device=self._device))
+        
 
         # randomize DOF velocities
         dof_vel = torch.zeros((num_resets, self._cartpoles.num_dof), device=self._device)

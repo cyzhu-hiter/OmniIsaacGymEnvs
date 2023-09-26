@@ -6,6 +6,9 @@ physics_engine: ${..physics_engine}
 # if given, will override the device setting in gym. 
 env:
   numEnvs: ${resolve_default:512,${...num_envs}}
+  numGroups: ${resolve_default:32,${...num_groups}}
+  groupMark: ${resolve_default:[2, 4, 8, 12, 16, 20, 24, 28, 32],${...group_marks}}
+  stateDiv: ${resolve_default:[3, 3],${...state_div}}
   envSpacing: 4.0
   resetDist: 3.0
   maxEffort: 400.0

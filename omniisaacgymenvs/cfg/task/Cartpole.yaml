@@ -9,6 +9,7 @@ env:
   numGroups: ${resolve_default:32,${...num_groups}}
   groupMark: ${resolve_default:[2, 4, 8, 12, 16, 20, 24, 28, 32],${...group_marks}}
   stateDiv: ${resolve_default:[3, 3],${...state_div}}
+  groupWise: ${resolve_default:False,${...group_wise}}
   envSpacing: 4.0
   resetDist: 3.0
   maxEffort: 400.0

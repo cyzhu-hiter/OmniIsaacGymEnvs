@@ -69,6 +69,7 @@ class CartpoleTask(RLTask):
         self._groupmarklist = self._task_cfg["env"]["groupMark"] # type -> list
         self._num_partitions = len(self._groupmarklist)
         self._state_div = self._task_cfg["env"]["stateDiv"]
+        self._groupwise = self._task_cfg["env"]["groupWise"]
 
         if self._num_groups != self._groupmarklist[-1] or self._num_partitions != np.prod(self._state_div):
             ValueError("The Optimization Combination setting is not correct!")
@@ -139,29 +140,31 @@ class CartpoleTask(RLTask):
 
     def reset_idx(self, env_ids):
         num_resets = len(env_ids)
-        reset_group_mark = [0]* self._num_partitions
-        mark_index = 0
-        for env_id in env_ids:
-            while mark_index < self._num_partitions and env_id >= self.marks[mark_index + 1]:
-                mark_index += 1
-            if self.marks[mark_index] <= env_id < self.marks[mark_index+1]:
-                reset_group_mark[mark_index] += 1
-
-        # randomize DOF positions
-        reset_mark = 0
         dof_pos = torch.zeros((num_resets, self._cartpoles.num_dof), device=self._device)
-        for idx, value in enumerate(list(product(self._space_combination_list[0], self._space_combination_list[1]))):
-            dof_pos[reset_mark:reset_mark+reset_group_mark[idx], self._cart_dof_idx] = \
-                1.0 * (1.0 - 2.0 * torch.rand(reset_group_mark[idx], device=self._device)) / self._state_div[0] +\
-                2 * (-(self._state_div[0]//2) + value[0]) / self._state_div[0]
-            dof_pos[reset_mark:reset_mark+reset_group_mark[idx], self._pole_dof_idx] = \
-                0.125 * math.pi * ((1.0 - 2.0 * torch.rand(reset_group_mark[idx], device=self._device)) / self._state_div[1] +\
-                                   2 * (-(self._state_div[1]//2) + value[1]) / self._state_div[1])
-            reset_mark += reset_group_mark[idx]
+        
+        if self._groupwise:
+            reset_group_mark = [0]* self._num_partitions
+            mark_index = 0
+            for env_id in env_ids:
+                while mark_index < self._num_partitions and env_id >= self.marks[mark_index + 1]:
+                    mark_index += 1
+                if self.marks[mark_index] <= env_id < self.marks[mark_index+1]:
+                    reset_group_mark[mark_index] += 1
 
-        # Default randomization initialization
-        # dof_pos[:, self._cart_dof_idx] = 1.0 * (1.0 - 2.0 * torch.rand(num_resets, device=self._device))
-        # dof_pos[:, self._pole_dof_idx] = 0.125 * math.pi * (1.0 - 2.0 * torch.rand(num_resets, device=self._device))
+            # randomize DOF positions
+            reset_mark = 0
+            for idx, value in enumerate(list(product(self._space_combination_list[0], self._space_combination_list[1]))):
+                dof_pos[reset_mark:reset_mark+reset_group_mark[idx], self._cart_dof_idx] = \
+                    1.0 * (1.0 - 2.0 * torch.rand(reset_group_mark[idx], device=self._device)) / self._state_div[0] +\
+                    2 * (-(self._state_div[0]//2) + value[0]) / self._state_div[0]
+                dof_pos[reset_mark:reset_mark+reset_group_mark[idx], self._pole_dof_idx] = \
+                    0.125 * math.pi * ((1.0 - 2.0 * torch.rand(reset_group_mark[idx], device=self._device)) / self._state_div[1] +\
+                                    2 * (-(self._state_div[1]//2) + value[1]) / self._state_div[1])
+                reset_mark += reset_group_mark[idx]
+        else:
+            # Default randomization initialization
+            dof_pos[:, self._cart_dof_idx] = 1.0 * (1.0 - 2.0 * torch.rand(num_resets, device=self._device))
+            dof_pos[:, self._pole_dof_idx] = 0.125 * math.pi * (1.0 - 2.0 * torch.rand(num_resets, device=self._device))
         
 
         # randomize DOF velocities

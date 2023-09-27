@@ -1,4 +1,9 @@
 # Omniverse Isaac Gym Reinforcement Learning Environments for Isaac Sim
+## Command to initialize the training in docker container with new features
+
+```bash
+/isaac-sim/python.sh scripts/rlgames_train.py task=Cartpole headless=True num_groups=32 group_marks=[4,6,10,14,16,20,24,28,32] group_wise=True experiment=default
+```
 
 ## About this repository
 

@@ -59,7 +59,8 @@ def list_to_dict(lst, target=None):
     return result
 
 def calculate_target(i):
-    return 100 - int((get_tensorboard_target(f'set{i}')["episode_lengths/step"] > 490.0).idxmax()/8192)
+    tb_data = get_tensorboard_target(f'set{i}')
+    return 100 - int((tb_data["episode_lengths/step"] > 490.0).idxmax()/8192)
 
 
 #define the black box function
@@ -98,9 +99,9 @@ for combo in itertools.combinations_with_replacement(range(target_sum + 1), num_
 grid_points = np.array(grid_points)   
 
 
-  
+
 #Initial Priors
-INITIALIZE_DATA = False
+INITIALIZE_DATA = True
 
 # Scratch the Initial csv file
 if INITIALIZE_DATA:
@@ -117,8 +118,9 @@ if INITIALIZE_DATA:
     df = pd.DataFrame(data, columns=[f'N{i}' for i in range(1, 10)])
 
     # Add an extra 'target' column and set it with default value (e.g. 0)
+    df['target'] = 0 # Initialization
     for i in range(1,7):
-        df['target'] = calculate_target(i)
+        df['target'].iloc[i-1] = calculate_target(i)
 
     # Save the DataFrame to a CSV file
     df.to_csv('runs/setting_record_init.csv', index=False)
